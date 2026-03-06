@@ -1,0 +1,44 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: water_counter_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-water}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-water123}
+      POSTGRES_DB: ${POSTGRES_DB:-water_counter}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-water} -d ${POSTGRES_DB:-water_counter}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: ./backend
+    container_name: water_counter_api
+    restart: unless-stopped
+    env_file: ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-water}:${POSTGRES_PASSWORD:-water123}@db:5432/${POSTGRES_DB:-water_counter}
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
+
+  frontend:
+    build: ./frontend
+    container_name: water_counter_frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - app
+
+volumes:
+  pg_data:
