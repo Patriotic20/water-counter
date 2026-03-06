@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import crud
 from app.database import get_db
-from app.schemas import HealthOut, WaterReadingCreate, WaterReadingList, WaterReadingOut
+from app.schemas import HealthOut, WaterReadingCreate, WaterReadingList, WaterReadingOut, UserCreate, UserOut, UserUsageOut
 from app.websocket import manager
 
 logger = logging.getLogger(__name__)
@@ -27,6 +27,32 @@ async def health_check(db: AsyncSession = Depends(get_db)) -> HealthOut:
         db_status = "error"
 
     return HealthOut(status="ok", db=db_status)
+
+
+# ─────────────────────────────────────────────────────────────
+# Users
+# ─────────────────────────────────────────────────────────────
+@router.post("/api/users", response_model=UserOut, status_code=201, tags=["Users"])
+async def create_user(
+    payload: UserCreate, db: AsyncSession = Depends(get_db)
+) -> UserOut:
+    """Create a new user."""
+    user = await crud.create_user(db, payload)
+    return UserOut.model_validate(user)
+
+
+@router.get("/api/users", response_model=list[UserOut], tags=["Users"])
+async def get_users(db: AsyncSession = Depends(get_db)) -> list[UserOut]:
+    """List all users."""
+    users = await crud.get_users(db)
+    return [UserOut.model_validate(u) for u in users]
+
+
+@router.get("/api/users/usage", response_model=list[UserUsageOut], tags=["Users"])
+async def get_users_usage(db: AsyncSession = Depends(get_db)) -> list[UserUsageOut]:
+    """Get total water usage for each user."""
+    usages = await crud.get_user_usages(db)
+    return [UserUsageOut.model_validate(u) for u in usages]
 
 
 # ─────────────────────────────────────────────────────────────

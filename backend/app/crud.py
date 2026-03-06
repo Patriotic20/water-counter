@@ -4,8 +4,8 @@ from datetime import datetime
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import WaterReading
-from app.schemas import WaterReadingCreate
+from app.models import User, WaterReading
+from app.schemas import UserCreate, WaterReadingCreate
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +15,7 @@ async def create_reading(
     data: WaterReadingCreate,
 ) -> WaterReading:
     """Persist a new water reading from the ESP32."""
-    reading = WaterReading(pulses=data.pulses, m3=data.m3)
+    reading = WaterReading(user_id=data.user_id, pulses=data.pulses, m3=data.m3)
     db.add(reading)
     await db.flush()          # get auto-generated id without full commit
     await db.refresh(reading)
@@ -65,3 +65,43 @@ async def get_readings_since(
         .order_by(WaterReading.recorded_at)
     )
     return list(result.scalars().all())
+
+
+# ─────────────────────────────────────────────────────────────
+# User CRUD
+# ─────────────────────────────────────────────────────────────
+async def create_user(db: AsyncSession, data: UserCreate) -> User:
+    """Create a new user."""
+    user = User(name=data.name)
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    logger.info("Created user id=%s name=%s", user.id, user.name)
+    return user
+
+
+async def get_users(db: AsyncSession) -> list[User]:
+    """Get all users."""
+    result = await db.execute(select(User).order_by(User.id))
+    return list(result.scalars().all())
+
+
+async def get_user_usages(db: AsyncSession) -> list[dict]:
+    """
+    Calculate total water usage per user.
+    Assuming m3 is an absolute counter from the ESP32, 
+    we take the maximum m3 reading per user as their total usage.
+    """
+    stmt = (
+        select(
+            User.id.label("user_id"),
+            User.name,
+            func.coalesce(func.max(WaterReading.m3), 0.0).label("total_m3")
+        )
+        .outerjoin(WaterReading, User.id == WaterReading.user_id)
+        .group_by(User.id)
+    )
+    result = await db.execute(stmt)
+    
+    # Convert Row objects to dicts
+    return [{"user_id": row.user_id, "name": row.name, "total_m3": float(row.total_m3)} for row in result.all()]
